@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"math/rand"
 	"strings"
 	"sync"
 	"time"
@@ -80,10 +81,13 @@ func NewCollector(logContext string, cc *config.CollectorConfig, constLabels []*
 // Collect implements Collector.
 func (c *collector) Collect(ctx context.Context, conn *sql.DB, ch chan<- Metric) {
 	var wg sync.WaitGroup
+	r := rand.Intn(1000)
 	wg.Add(len(c.queries))
 	for _, q := range c.queries {
 		go func(q *Query) {
 			defer wg.Done()
+			time.Sleep(time.Duration(r) * time.Millisecond)
+			klog.Warning("sleep")
 			q.Collect(ctx, conn, ch)
 		}(q)
 	}
