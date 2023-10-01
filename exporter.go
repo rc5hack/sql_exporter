@@ -12,7 +12,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	"google.golang.org/protobuf/proto"
-	"k8s.io/klog/v2"
 )
 
 var (
@@ -201,11 +200,11 @@ func parseContextLog(list string) map[string]string {
 	return m
 }
 
-// ReloadCollectors returns a function that reloads collectors for the given SQL exporter.
+/* // ReloadCollectors returns a function that reloads collectors for the given SQL exporter.
 // The returned function takes an HTTP response writer and request as arguments.
 // It reads the configuration file, updates the collectors for the exporter's target or jobs,
 // and returns an HTTP status code indicating success or failure.
-func ReloadCollectors(e Exporter) error {
+func ReloadCollectors2(e Exporter) error {
 	klog.Warning("Reloading collectors has started...")
 	klog.Warning("Connections will not be changed upon the restart of the exporter")
 	exporterNewConfig, err := config.Load(config.ConfigFile)
@@ -245,7 +244,10 @@ func ReloadCollectors(e Exporter) error {
 		for _, currentJob := range currentConfig.Jobs {
 			for _, newJob := range exporterNewConfig.Jobs {
 				if newJob.Name == currentJob.Name {
-					newJob.StaticConfigs = currentJob.StaticConfigs
+					// Create a new slice of StaticConfig structs that contains the StaticConfigs from the current job
+					staticConfigs := make([]*config.StaticConfig, len(currentJob.StaticConfigs))
+					copy(staticConfigs, currentJob.StaticConfigs)
+					newJob.StaticConfigs = staticConfigs
 				}
 			}
 		}
@@ -275,4 +277,49 @@ func ReloadCollectors(e Exporter) error {
 	}
 	klog.Warning("No target or jobs have been found - nothing to reload")
 	return errors.New(err.Error())
+} */
+
+func ReloadCollectors(e Exporter) error {
+	exporterNewConfig, err := config.Load(config.ConfigFile)
+	if err != nil {
+		return err
+	}
+
+	currentConfig := e.Config()
+	currentConfig.Collectors = exporterNewConfig.Collectors
+
+	if currentConfig.Target != nil {
+		target, err := NewTarget("", currentConfig.Target.Name, string(currentConfig.Target.DSN),
+			exporterNewConfig.Target.Collectors(), nil, currentConfig.Globals, currentConfig.Target.EnablePing)
+		if err != nil {
+			return err
+		}
+		e.UpdateTarget([]Target{target})
+		return nil
+	}
+
+	if len(currentConfig.Jobs) > 0 {
+		currentConfig.Jobs = exporterNewConfig.Jobs
+
+		var updateErr error
+		targets := make([]Target, 0, len(currentConfig.Jobs))
+
+		for _, jobConfigItem := range currentConfig.Jobs {
+			job, err := NewJob(jobConfigItem, currentConfig.Globals)
+			if err != nil {
+				updateErr = err
+				break
+			}
+			targets = append(targets, job.Targets()...)
+		}
+
+		if updateErr != nil {
+			return err
+		}
+
+		e.UpdateTarget(targets)
+		return nil
+	}
+
+	return errors.New("no target or jobs found")
 }
