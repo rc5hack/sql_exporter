@@ -1,0 +1,34 @@
+# Global settings and defaults.
+global:
+  scrape_timeout: 10s
+  scrape_timeout_offset: 500ms
+  min_interval: 0s
+  max_connections: 3
+  max_idle_connections: 3
+
+# The target to monitor and the collectors to execute on it.
+target:
+   name: test
+   data_source_name: 'csvq:///Users/sergei/Projects/'
+   enable_ping: true
+   collectors: [csv]
+
+collectors:
+  - collector_name: pgb
+    metrics:
+      # The metric name, type and help text, as exported to /metrics.
+      - metric_name: test
+        no_prepared_statement: true
+        # This is a Prometheus counter (monotonically increasing value).
+        type: gauge
+        help: 'Total number of times the transaction log has been expanded since last restart, per database.'
+        # Optional set of labels derived from key columns.
+        # This query returns exactly one value per row, in the `counter` column.
+        key_labels:
+          - name
+        query: |
+          SHOW DATABASES;
+
+# Collector files specifies a list of globs. One collector definition per file.
+collector_files:
+  - "*.collector.yml"

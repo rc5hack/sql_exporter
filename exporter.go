@@ -80,7 +80,8 @@ func NewExporter(configFile string) (Exporter, error) {
 		}
 	}
 
-	scrapeErrors := registerSvcMetrics()
+	scrapeErrors := newScrapeErrors()
+	SvcRegistry.MustRegister(scrapeErrors)
 
 	return &exporter{
 		config:       c,
@@ -180,22 +181,22 @@ func (e *exporter) UpdateTarget(target []Target) {
 	e.targets = target
 }
 
-// registerSvcMetrics registers the metrics for the exporter itself.
-func registerSvcMetrics() *prometheus.CounterVec {
-	scrapeErrors := prometheus.NewCounterVec(prometheus.CounterOpts{
+// newScrapeErrors registers the metrics for the exporter itself.
+func newScrapeErrors() *prometheus.CounterVec {
+	return prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "scrape_errors",
 		Help: "Total number of scrape errors per job, target, collector and query.",
 	}, svcMetricLabels)
-	SvcRegistry.MustRegister(scrapeErrors)
-	return scrapeErrors
 }
 
 // split comma separated list of key=value pairs and return a map of key value pairs
-func parseContextLog(list string) map[string]string {
+func parseContextLog(keyvals string) map[string]string {
 	m := make(map[string]string)
-	for _, item := range strings.Split(list, ",") {
-		parts := strings.SplitN(item, "=", 2)
-		m[parts[0]] = parts[1]
+	if keyvals != "" {
+		for _, item := range strings.Split(keyvals, ",") {
+			parts := strings.SplitN(item, "=", 2)
+			m[parts[0]] = parts[1]
+		}
 	}
 	return m
 }
@@ -204,7 +205,7 @@ func parseContextLog(list string) map[string]string {
 // The returned function takes an HTTP response writer and request as arguments.
 // It reads the configuration file, updates the collectors for the exporter's target or jobs,
 // and returns an HTTP status code indicating success or failure.
-func ReloadCollectors2(e Exporter) error {
+func ReloadCollectors(e Exporter) error {
 	klog.Warning("Reloading collectors has started...")
 	klog.Warning("Connections will not be changed upon the restart of the exporter")
 	exporterNewConfig, err := config.Load(config.ConfigFile)
@@ -276,13 +277,13 @@ func ReloadCollectors2(e Exporter) error {
 		return nil
 	}
 	klog.Warning("No target or jobs have been found - nothing to reload")
-	return errors.New(err.Error())
+	return errors.New("no target or jobs found - nothing to reload")
 } */
 
 func ReloadCollectors(e Exporter) error {
 	exporterNewConfig, err := config.Load(config.ConfigFile)
 	if err != nil {
-		return err
+		return errors.New(err.Error())
 	}
 
 	currentConfig := e.Config()
@@ -292,7 +293,7 @@ func ReloadCollectors(e Exporter) error {
 		target, err := NewTarget("", currentConfig.Target.Name, string(currentConfig.Target.DSN),
 			exporterNewConfig.Target.Collectors(), nil, currentConfig.Globals, currentConfig.Target.EnablePing)
 		if err != nil {
-			return err
+			return errors.New(err.Error())
 		}
 		e.UpdateTarget([]Target{target})
 		return nil
@@ -314,7 +315,7 @@ func ReloadCollectors(e Exporter) error {
 		}
 
 		if updateErr != nil {
-			return err
+			return errors.New(err.Error())
 		}
 
 		e.UpdateTarget(targets)
